@@ -1,6 +1,6 @@
 // オフライン対応。アプリのファイルを端末に保存しておき、通信できなくても開けるようにする。
 // ファイルを更新したら CACHE の番号を上げる（古いキャッシュは自動で消える）
-const CACHE = 'nanishita-v23';
+const CACHE = 'nanishita-v24';
 const FILES = [
   './',
   'index.html',

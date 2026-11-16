@@ -148,8 +148,7 @@
 
   const SORT_KEY = 'nanishita.sort';
   const SORT_MODES = [
-    ['updated', '更新した順（記録・名前変更したものが上、記録なしは一番下）'],
-    ['recent', '最後に記録した日が新しい順'],
+    ['updated', '記録した日が新しい順（記録なしは一番下）'],
     ['oldest', '最後に記録した日が古い順'],
     ['name', 'カテゴリ名順'],
     ['manual', '自分で並べ替えた順'],
@@ -158,10 +157,16 @@
   // 並び順の選択は端末ごとの好みなので localStorage に保存（使えない環境では初期設定のまま）
   function getSortMode() {
     try {
-      const v = localStorage.getItem(SORT_KEY);
-      if (SORT_MODES.some(([k]) => k === v)) return v;
+      const v = fixSortMode(localStorage.getItem(SORT_KEY));
+      if (v) return v;
     } catch {}
     return 'updated';
+  }
+
+  // 'recent'（最後に記録した日が新しい順）は 'updated' にまとめたので読み替える。知らない値は null
+  function fixSortMode(v) {
+    if (v === 'recent') v = 'updated';
+    return SORT_MODES.some(([k]) => k === v) ? v : null;
   }
 
   function setSortMode(v) {
@@ -173,12 +178,13 @@
   function sortCategories(cats, last, mode, touched) {
     if (mode === 'manual') return cats;
     if (mode === 'updated') {
-      // 記録があるカテゴリは、名前変更（updatedAt）と記録の追加・編集のうち新しいほう。
+      // 最後の記録の日時（記録した日として入れた日時）が新しい順。同じ日時なら記録を追加・編集したのが新しい順。
       // 記録がないカテゴリは一番下にまとめ、その中は追加・名前変更が新しい順
       const t = c => Math.max(c.createdAt || 0, c.updatedAt || 0, touched[c.id] || 0);
       return cats.sort((a, b) => {
-        const ha = a.id in touched, hb = b.id in touched;
-        if (ha !== hb) return ha ? -1 : 1;
+        const la = last[a.id], lb = last[b.id];
+        if (!la !== !lb) return la ? -1 : 1;
+        if (la && lb && la.datetime !== lb.datetime) return lb.datetime - la.datetime;
         return t(b) - t(a);
       });
     }
@@ -930,7 +936,7 @@
 
   // ---- 画面: 設定 ----
 
-  const APP_VERSION = '0.16.3';
+  const APP_VERSION = '0.17.0';
   const BACKUP_FORMAT = 'nanishita-backup';
 
   // to: 'family' なら「家族」の欄まで移動して表示する（できごと画面の案内リンクから）
@@ -1229,8 +1235,7 @@
     });
 
     // 並び順の設定（古いバックアップにはないので、そのときは今の設定のまま）
-    const s = data.settings && data.settings.sort;
-    const sort = SORT_MODES.some(([k]) => k === s) ? s : null;
+    const sort = fixSortMode(data.settings && data.settings.sort);
     return { categories, records, people, events, sort };
   }
 
