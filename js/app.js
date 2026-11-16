@@ -173,6 +173,16 @@
     try { localStorage.setItem(SORT_KEY, v); } catch {}
   }
 
+  // できごとの並び順：'new'（新しい順・初期値）か 'old'（古い順）。端末ごとの好みなので localStorage
+  const EVENT_SORT_KEY = 'nanishita.eventSort';
+  const fixEventSort = v => (v === 'new' || v === 'old' ? v : null);
+  function getEventSort() {
+    try { return fixEventSort(localStorage.getItem(EVENT_SORT_KEY)) || 'new'; } catch { return 'new'; }
+  }
+  function setEventSort(v) {
+    try { localStorage.setItem(EVENT_SORT_KEY, v); } catch {}
+  }
+
   // cats は sortOrder 順で渡される。記録がないカテゴリは日付順のとき末尾（追加順）
   // touched：カテゴリIDごとの記録を最後に追加・編集した時刻（'updated' のときだけ使う）
   function sortCategories(cats, last, mode, touched) {
@@ -729,6 +739,13 @@
     select.value = person;
     select.addEventListener('change', () => { person = select.value; draw(); });
 
+    const order = h('select', { class: 'input select', 'aria-label': 'できごとの並び順' },
+      h('option', { value: 'new' }, '新しい順'),
+      h('option', { value: 'old' }, '古い順')
+    );
+    order.value = getEventSort();
+    order.addEventListener('change', () => { setEventSort(order.value); draw(); });
+
     // 検索語を入れると、年に関係なくすべてのできごとから探す
     const search = h('input', {
       type: 'search',
@@ -756,6 +773,7 @@
         DB.getPeopleMap(),
       ]);
       if (token !== drawing) return;
+      if (order.value === 'new') events.reverse(); // DB からは古い順で来る
       // 誰かを選んだときは、その人のできごと＋家族みんなのできごと
       let shown = !person ? events
         : events.filter(e => e.personId === person || (person !== FAMILY && e.personId === FAMILY));
@@ -862,9 +880,15 @@
     // replaceChildren は null や false を文字として表示するので、条件付きの要素は除いてから渡す
     app.replaceChildren(...[
       h('header', { class: 'page-header' }, h('h1', null, 'できごと')),
-      h('label', { class: 'field ev-filter' },
-        h('span', { class: 'field-label' }, '誰のできごと'),
-        h('span', { class: 'select-wrap' }, select)
+      h('div', { class: 'ev-filters' },
+        h('label', { class: 'field ev-filter' },
+          h('span', { class: 'field-label' }, '誰のできごと'),
+          h('span', { class: 'select-wrap' }, select)
+        ),
+        h('label', { class: 'field ev-filter ev-order' },
+          h('span', { class: 'field-label' }, '並び順'),
+          h('span', { class: 'select-wrap' }, order)
+        )
       ),
       h('button', { type: 'button', class: 'btn add-btn ev-add', onclick: addEvent }, '＋ できごとを追加'),
       !people.length && h('p', { class: 'note' },
@@ -936,7 +960,7 @@
 
   // ---- 画面: 設定 ----
 
-  const APP_VERSION = '0.17.0';
+  const APP_VERSION = '0.18.0';
   const BACKUP_FORMAT = 'nanishita-backup';
 
   // to: 'family' なら「家族」の欄まで移動して表示する（できごと画面の案内リンクから）
@@ -1160,7 +1184,7 @@
       format: BACKUP_FORMAT,
       version: 1,
       exportedAt: new Date().toISOString(),
-      settings: { sort: getSortMode() },
+      settings: { sort: getSortMode(), eventSort: getEventSort() },
       categories,
       records,
       people,
@@ -1236,7 +1260,8 @@
 
     // 並び順の設定（古いバックアップにはないので、そのときは今の設定のまま）
     const sort = fixSortMode(data.settings && data.settings.sort);
-    return { categories, records, people, events, sort };
+    const eventSort = fixEventSort(data.settings && data.settings.eventSort);
+    return { categories, records, people, events, sort, eventSort };
   }
 
   const summary = d => `カテゴリ ${d.categories.length}件・記録 ${d.records.length}件・` +
@@ -1265,6 +1290,7 @@
 
     await DB.replaceAll(data);
     if (data.sort) setSortMode(data.sort);
+    if (data.eventSort) setEventSort(data.eventSort);
     await renderSettings(); // 並べ替えの一覧を新しいデータに合わせる
     await alertDialog('読み込みました', `${summary(data)}を復元しました。`);
   }

@@ -666,7 +666,10 @@ input[type="time"]::-webkit-date-and-time-value { text-align: left; }
 }
 .input.select { -webkit-appearance: none; appearance: none; padding-right: 40px; font-weight: 700; }
 
-.ev-filter { margin-bottom: 4px; }
+/* 「誰のできごと」と「並び順」を横に並べる（並び順は短いので狭く） */
+.ev-filters { display: flex; gap: 12px; margin-bottom: 4px; }
+.ev-filter { flex: 1 1 0; min-width: 0; margin: 0; }
+.ev-order { flex: 0 0 8.5em; }
 .ev-add { margin: 12px 0 18px; }
 .ev-item { width: 100%; border: none; background: none; font: inherit; text-align: left; cursor: pointer; }
 .ev-item:active { background: var(--accent-soft); }
