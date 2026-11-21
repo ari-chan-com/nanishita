@@ -683,6 +683,30 @@ input[type="time"]::-webkit-date-and-time-value { text-align: left; }
   font-weight: 700;
 }
 .ev-person.family { background: var(--done-soft); color: var(--done); }
+.ev-people { display: flex; flex-wrap: wrap; gap: 4px; }
+.ev-person .deleted { margin-left: 4px; }
+
+/* できごとの「誰の」：押すと選ばれるピル（何人でも選べる） */
+.person-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.person-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.person-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.person-chip:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.person-chip.family:has(input:checked) { border-color: var(--done); background: var(--done-soft); color: var(--done); }
+.person-chip:has(input:checked) span::before { content: "✓ "; }
+.person-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ev-text { margin-top: 2px; font-size: 1.05rem; word-break: break-word; }
 .text-link { color: var(--accent); font-weight: 700; }
 .ev-none { text-align: center; margin-top: 16px; }

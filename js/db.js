@@ -276,7 +276,7 @@ const DB = (() => {
 
   async function countEventsOfPerson(personId) {
     const all = await wrap((await store('events')).getAll());
-    return all.filter(e => e.personId === personId).length;
+    return all.filter(e => personIdsOf(e).includes(personId)).length;
   }
 
   // できごとがあれば deletedAt を付けて選択肢から隠す（できごとは「削除済み」付きで残す）。なければ完全に削除
@@ -285,7 +285,7 @@ const DB = (() => {
     const tx = db.transaction(['people', 'events'], 'readwrite');
     const people = tx.objectStore('people');
     const events = await wrap(tx.objectStore('events').getAll());
-    if (events.some(e => e.personId === id)) {
+    if (events.some(e => personIdsOf(e).includes(id))) {
       const person = await wrap(people.get(id));
       if (person) {
         person.deletedAt = person.updatedAt = Date.now();
@@ -298,33 +298,41 @@ const DB = (() => {
   }
 
   // ---- できごと ----
-  // personId は家族の id か、家族みんなを表す 'family'
+  // personIds は家族の id の配列（複数人を選べる）か、家族みんなを表す ['family']。
+  // 以前は1人だけの personId だったので、古いデータは読むときに personIds に直す（編集して保存すると書き換わる）
+  function personIdsOf(e) {
+    if (Array.isArray(e.personIds)) return e.personIds;
+    return e.personId ? [e.personId] : [];
+  }
+  const withPersonIds = e => ({ ...e, personIds: personIdsOf(e) });
+  const byDate = (a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt;
 
   // ある年のできごと。古い順（同じ日は登録順）
   async function listEventsOfYear(year) {
     const index = (await store('events')).index('date');
     const all = await wrap(index.getAll(IDBKeyRange.bound(`${year}-01-01`, `${year}-12-31`)));
-    return all.sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+    return all.map(withPersonIds).sort(byDate);
   }
 
   // すべてのできごと。古い順（検索用）
   async function listAllEvents() {
     const all = await wrap((await store('events')).getAll());
-    return all.sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+    return all.map(withPersonIds).sort(byDate);
   }
 
-  async function addEvent({ date, personId, text }) {
+  async function addEvent({ date, personIds, text }) {
     const now = Date.now();
-    const event = { id: newId(), date, personId, text, createdAt: now, updatedAt: now };
+    const event = { id: newId(), date, personIds, text, createdAt: now, updatedAt: now };
     await wrap((await store('events', 'readwrite')).add(event));
     return event;
   }
 
-  async function updateEvent(id, { date, personId, text }) {
+  async function updateEvent(id, { date, personIds, text }) {
     const s = await store('events', 'readwrite');
     const event = await wrap(s.get(id));
     if (!event) return null;
-    Object.assign(event, { date, personId, text, updatedAt: Date.now() });
+    delete event.personId; // 古い形式（1人だけ）から personIds に移す
+    Object.assign(event, { date, personIds, text, updatedAt: Date.now() });
     await wrap(s.put(event));
     return event;
   }

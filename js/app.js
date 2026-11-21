@@ -710,7 +710,7 @@
 
   // ---- 画面: できごと（日付・誰の・一行メモ。年ごとに古い順） ----
 
-  const FAMILY = 'family'; // personId：家族みんな
+  const FAMILY = 'family'; // personIds：['family'] で家族みんな
   const eventsHref = (year, person) => `#/events/${year}` + (person ? '?p=' + encodeURIComponent(person) : '');
 
   // 選択肢：家族みんな＋登録した家族
@@ -776,12 +776,12 @@
       if (order.value === 'new') events.reverse(); // DB からは古い順で来る
       // 誰かを選んだときは、その人のできごと＋家族みんなのできごと
       let shown = !person ? events
-        : events.filter(e => e.personId === person || (person !== FAMILY && e.personId === FAMILY));
+        : events.filter(e => e.personIds.includes(person) || (person !== FAMILY && e.personIds.includes(FAMILY)));
       if (query) {
         // 全角半角・大文字小文字を区別しない。空白区切りの語をすべて含むものに絞る
         const terms = normalize(query).split(/\s+/).filter(Boolean);
         shown = shown.filter(e => {
-          const text = normalize(`${personName(e.personId, peopleMap)} ${e.text}`);
+          const text = normalize(`${e.personIds.map(id => personName(id, peopleMap)).join(' ')} ${e.text}`);
           return terms.every(t => text.includes(t));
         });
       }
@@ -798,12 +798,14 @@
           list = h('ul', { class: 'hist-list' });
           body.push(h('h3', { class: 'month' }, query ? `${y}年` : `${m}月`), list);
         }
-        const p = peopleMap[e.personId];
         list.append(h('li', null, h('button', { type: 'button', class: 'hist-item ev-item', onclick: () => editEvent(e) },
           h('div', { class: 'hist-date' }, `${m}/${d}`),
           h('div', { class: 'hist-body' },
-            h('span', { class: 'ev-person' + (e.personId === FAMILY ? ' family' : '') }, personName(e.personId, peopleMap)),
-            p && p.deletedAt && h('span', { class: 'deleted' }, '削除済み'),
+            h('div', { class: 'ev-people' }, e.personIds.map(id => {
+              const p = peopleMap[id];
+              return h('span', { class: 'ev-person' + (id === FAMILY ? ' family' : '') },
+                personName(id, peopleMap), p && p.deletedAt && h('span', { class: 'deleted' }, '削除済み'));
+            })),
             h('div', { class: 'ev-text' }, e.text)
           ),
           h('span', { class: 'chev', 'aria-hidden': 'true' }, '›')
@@ -840,7 +842,7 @@
       const values = await eventForm({
         title: 'できごとを追加',
         date: toDateStr(new Date()),
-        personId: person,
+        personIds: person ? [person] : [],
         people,
         okLabel: '追加',
       });
@@ -853,7 +855,7 @@
       const values = await eventForm({
         title: 'できごとを編集',
         date: e.date,
-        personId: e.personId,
+        personIds: e.personIds,
         text: e.text,
         people,
         okLabel: '保存',
@@ -899,19 +901,32 @@
     await draw();
   }
 
-  // できごとの入力ダイアログ。OK なら { date, personId, text }、削除ボタンなら 'delete'、それ以外は null
-  async function eventForm({ title, date, personId = '', text = '', people, okLabel, extraButtons = [] }) {
+  // できごとの入力ダイアログ。OK なら { date, personIds, text }、削除ボタンなら 'delete'、それ以外は null
+  // 「誰の」は何人でも選べる。「家族みんな」を選ぶとほかの人の選択は外れる（逆も同じ）
+  async function eventForm({ title, date, personIds = [], text = '', people, okLabel, extraButtons = [] }) {
     const dateIn = h('input', { type: 'date', class: 'input', value: date });
-    const personIn = h('select', { class: 'input select' },
-      h('option', { value: '', disabled: true }, '選んでください'),
-      personOptions(people)
-    );
-    // 削除した家族のできごとを編集するときは、その名前を残しておく
-    if (personId && personId !== FAMILY && !people.some(p => p.id === personId)) {
+    const choices = [{ id: FAMILY, name: '家族みんな' }, ...people];
+    // 削除した家族のできごとを編集するときは、その名前も選択肢に残しておく
+    const gone = personIds.filter(id => id !== FAMILY && !people.some(p => p.id === id));
+    if (gone.length) {
       const map = await DB.getPeopleMap();
-      personIn.append(h('option', { value: personId }, personName(personId, map) + '（削除済み）'));
+      gone.forEach(id => choices.push({ id, name: personName(id, map) + '（削除済み）' }));
     }
-    personIn.value = personId;
+    const boxes = choices.map(c => h('input', {
+      type: 'checkbox',
+      value: c.id,
+      checked: personIds.includes(c.id),
+    }));
+    const picked = () => boxes.filter(b => b.checked).map(b => b.value);
+    boxes.forEach(b => b.addEventListener('change', () => {
+      if (!b.checked) return;
+      boxes.forEach(o => {
+        if (o !== b && (b.value === FAMILY || o.value === FAMILY)) o.checked = false;
+      });
+    }));
+    const personIn = h('div', { class: 'person-chips' }, choices.map((c, i) =>
+      h('label', { class: 'person-chip' + (c.id === FAMILY ? ' family' : '') }, boxes[i], h('span', null, c.name))
+    ));
     const textIn = h('input', {
       type: 'text',
       class: 'input',
@@ -926,7 +941,8 @@
       title,
       content: h('div', { class: 'fields' },
         h('label', { class: 'field' }, h('span', { class: 'field-label' }, '日付'), dateIn),
-        h('label', { class: 'field' }, h('span', { class: 'field-label' }, '誰の'), h('span', { class: 'select-wrap' }, personIn)),
+        h('div', { class: 'field', role: 'group', 'aria-label': '誰の（何人でも選べます）' },
+          h('span', { class: 'field-label' }, '誰の（何人でも選べます）'), personIn),
         h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'できごと'), textIn)
       ),
       buttons: [
@@ -936,11 +952,11 @@
       ],
     });
 
-    const valid = () => dateIn.value && personIn.value && textIn.value.trim();
+    const valid = () => dateIn.value && picked().length && textIn.value.trim();
     const okBtn = dialogEl.querySelector('button[value="ok"]');
     const sync = () => { okBtn.disabled = !valid(); };
     sync();
-    [dateIn, personIn, textIn].forEach(el => {
+    [dateIn, ...boxes, textIn].forEach(el => {
       el.addEventListener('input', sync);
       el.addEventListener('change', sync);
     });
@@ -955,12 +971,12 @@
     const action = await p;
     if (action === 'delete') return 'delete';
     if (action !== 'ok' || !valid()) return null;
-    return { date: dateIn.value, personId: personIn.value, text: textIn.value.trim() };
+    return { date: dateIn.value, personIds: picked(), text: textIn.value.trim() };
   }
 
   // ---- 画面: 設定 ----
 
-  const APP_VERSION = '0.18.0';
+  const APP_VERSION = '0.19.0';
   const BACKUP_FORMAT = 'nanishita-backup';
 
   // to: 'family' なら「家族」の欄まで移動して表示する（できごと画面の案内リンクから）
@@ -1250,8 +1266,10 @@
       if (!p || !isStr(p.id) || typeof p.name !== 'string') throw new Error('家族のデータが壊れています。');
       return Number.isFinite(p.sortOrder) ? p : { ...p, sortOrder: i + 1 };
     });
+    // 誰の：今は personIds（配列）。古いバックアップは personId（1人）
+    const okPersons = e => Array.isArray(e.personIds) ? e.personIds.length && e.personIds.every(isStr) : isStr(e.personId);
     const events = (data.events || []).map(e => {
-      if (!e || !isStr(e.id) || !isStr(e.personId) || typeof e.text !== 'string' ||
+      if (!e || !isStr(e.id) || !okPersons(e) || typeof e.text !== 'string' ||
           !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) {
         throw new Error('できごとのデータが壊れています。');
       }
